@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="alternate icon" class="js-site-favicon" type="image/png" href="favicon.png">
+    <title>WebGL Animated Shaders</title>
+    <style>
+        body { margin: 0; }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <!-- Vertex shader template -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0, 1);
+        }
+    </script>
+
+    <!-- Fragment shader for green animated pattern -->
+    <script id="fragment-shader-green" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform float u_time;
+        void main() {
+            float x = sin(u_time + gl_FragCoord.x * 0.01) * 0.5 + 0.5;
+            float y = cos(u_time + gl_FragCoord.y * 0.01) * 0.5 + 0.5;
+            gl_FragColor = vec4(x, y, 0.5, 1.0);
+        }
+    </script>
+
+    <!-- Fragment shader for red animated background -->
+    <script id="fragment-shader-red" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform sampler2D iChannel0;
+        uniform vec2 u_resolution;
+        uniform float u_time;
+
+        float marble(vec2 p) {
+            p.x += sin(p.y * 3.0 + u_time) * 0.2;
+            return sin(p.x * 3.0 + sin(p.y * 4.0 + u_time * 0.5) * 2.0);
+        }
+
+        void main() {
+
+            vec2 uv = gl_FragCoord.xy / u_resolution;
+            vec4 greenColor = texture2D(iChannel0, uv);
+
+            uv.x *= u_resolution.x / u_resolution.y;
+    
+            float m = marble(uv * 10.0);
+    
+            gl_FragColor = mix(greenColor, vec4(0.5, 0.0, 0.0, 1.0), m);
+        }
+    </script>
+
+    <!-- Main fragment shader combining effects -->
+    <script id="fragment-shader-main" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform sampler2D iChannel0;
+        uniform sampler2D iChannel1;
+        uniform vec2 u_imageSize;
+        uniform vec2 u_resolution;
+        uniform float u_time;
+
+        float noise(vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+        }
+    
+        float fbm(vec2 st) {
+            float value = 0.0;
+            float amplitude = 0.5;
+            float frequency = 0.0;
+            
+            for (int i = 0; i < 6; i++) {
+                value += amplitude * noise(st);
+                st *= 2.0;
+                amplitude *= 0.5;
+            }
+            return value;
+        }
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / u_resolution;
+            vec4 redGreenColor = texture2D(iChannel0, uv);
+            vec4 blueColor = vec4(0.0, 0.0, 1.0, 1.0);
+            float stripeWidth = 0.05;
+            float stripe = step(stripeWidth, mod(uv.x + u_time * 0.1, stripeWidth * 2.0));
+
+            vec2 imageUV = vec2((gl_FragCoord.x - u_resolution.x * 0.5 + u_imageSize.x * 0.5) / u_imageSize.x, 1.0 - (gl_FragCoord.y - u_resolution.y * 0.5 + u_imageSize.y * 0.5) / u_imageSize.y);
+            vec4 imageColor = texture2D(iChannel1, imageUV);
+
+            vec4 redColor = mix(redGreenColor, blueColor, stripe);
+            vec4 imageSumColor = mix(redColor, imageColor, imageColor.a);
+
+            uv.x *= u_resolution.x/u_resolution.y;
+    
+            vec2 q = vec2(0.0);
+            q.x = fbm(uv + 0.00*u_time);
+            q.y = fbm(uv + vec2(1.0));
+    
+            vec2 r = vec2(0.0);
+            r.x = fbm(uv + 1.0*q + vec2(1.7,9.2)+ 0.15*u_time );
+            r.y = fbm(uv + 1.0*q + vec2(8.3,2.8)+ 0.126*u_time);
+    
+            float f = fbm(uv+r);
+    
+            vec3 color = mix(vec3(0.101961,0.619608,0.666667),
+                             vec3(0.666667,0.666667,0.498039),
+                             clamp((f*f)*4.0,0.0,1.0));
+    
+            color = mix(color,
+                        vec3(0,0,0.164706),
+                        clamp(length(q),0.0,1.0));
+    
+            color = mix(color,
+                        vec3(0.666667,1,1),
+                        clamp(length(r.x),0.0,1.0));
+
+            vec4 noiseColor = vec4((f*f*f+.6*f*f+.5*f)*color,1.);   
+            
+            gl_FragColor = mix(noiseColor, imageSumColor, sin(u_time));
+        }
+    </script>
+
+    <script>
+        // Create and append canvas to the body
+        var canvas = document.createElement('canvas');
+        canvas.width = window.innerWidth * window.devicePixelRatio;
+        canvas.height = window.innerHeight * window.devicePixelRatio;
+        document.body.appendChild(canvas);
+
+        // Initialize WebGL context
+        var gl = canvas.getContext('webgl');
+        if (!gl) {
+            alert('WebGL not supported, falling back on experimental-webgl');
+            gl = canvas.getContext('experimental-webgl');
+        }
+
+        // Create a buffer for the square's positions
+        var buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array([
+                -1.0, -1.0,
+                 1.0, -1.0,
+                -1.0,  1.0,
+                -1.0,  1.0,
+                 1.0, -1.0,
+                 1.0,  1.0]),
+            gl.STATIC_DRAW
+        );
+
+        // Create shader programs
+        var programGreen = createProgram(gl, document.getElementById("vertex-shader").text, document.getElementById("fragment-shader-green").text);
+        var programRed = createProgram(gl, document.getElementById("vertex-shader").text, document.getElementById("fragment-shader-red").text);
+        var programMain = createProgram(gl, document.getElementById("vertex-shader").text, document.getElementById("fragment-shader-main").text);
+
+        // Set up position attribute
+        var positionLocation = gl.getAttribLocation(programMain, "a_position");
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        // Create textures and framebuffers for green and red shaders
+        var textureGreen = createAndSetupTexture();
+        initializeTexture(textureGreen);
+        var framebufferGreen = createAndSetupFramebuffer(textureGreen);
+
+        var textureRed = createAndSetupTexture();
+        initializeTexture(textureRed);
+        var framebufferRed = createAndSetupFramebuffer(textureRed);
+
+        // Load and set up image texture
+        var texImage = createAndSetupTexture();
+        var image = new Image();
+        image.onload = function() {
+            gl.bindTexture(gl.TEXTURE_2D, texImage);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            animate();
+        };
+        image.src = 'logo.png';
+
+        // Animation loop
+        function animate() {
+            var currentTime = performance.now() * 0.001;
+
+            // Render green shader to texture
+            gl.useProgram(programGreen);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferGreen);
+            gl.uniform1f(gl.getUniformLocation(programGreen, "u_time"), currentTime);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // Render red shader to texture
+            gl.useProgram(programRed);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferRed);
+            gl.uniform1f(gl.getUniformLocation(programRed, "u_time"), currentTime);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureGreen);
+            gl.uniform1i(gl.getUniformLocation(programRed, "iChannel0"), 0);
+            gl.uniform2f(gl.getUniformLocation(programRed, "u_resolution"), canvas.width, canvas.height);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            // Render main shader to canvas
+            gl.useProgram(programMain);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.uniform2f(gl.getUniformLocation(programMain, "u_resolution"), canvas.width, canvas.height);
+            gl.uniform2fv(gl.getUniformLocation(programMain, "u_imageSize"), [1280, 720]);
+            gl.uniform1f(gl.getUniformLocation(programMain, "u_time"), currentTime);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureRed);
+            gl.uniform1i(gl.getUniformLocation(programMain, "iChannel0"), 0);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, texImage);
+            gl.uniform1i(gl.getUniformLocation(programMain, "iChannel1"), 1);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            requestAnimationFrame(animate);
+        }
+
+        // Helper functions for creating textures, framebuffers, and shaders
+        function createAndSetupTexture() {
+            var texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            return texture;
+        }
+
+        function initializeTexture(texture) {
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+
+        function createAndSetupFramebuffer(texture) {
+            var framebuffer = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            return framebuffer;
+        }
+
+        function createProgram(gl, vertexShaderSource, fragmentShaderSource) {
+            var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+            var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+            var program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program failed to link: ' + gl.getProgramInfoLog(program));
+                return null;
+            }
+            return program;
+        }
+
+        function createShader(gl, type, source) {
+            var shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+                return shader;
+            }
+            console.error(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+        }
+
+        // Resize canvas on window resize
+        window.addEventListener('resize', function() {
+            canvas.width = window.innerWidth * window.devicePixelRatio;
+            canvas.height = window.innerHeight * window.devicePixelRatio;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+
+            animate();
+        });
+
+    </script>
+</body>
+</html>
