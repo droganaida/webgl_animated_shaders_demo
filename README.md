@@ -2,6 +2,7 @@
 
 ## Overview
 This demo showcases a dynamic visual effect using native JavaScript and WebGL without any external libraries. It features multiple shaders and framebuffers to create an animated effect and integrate an image from external source. The demo is designed to be a practical example for those interested in learning about WebGL shaders.
+Live preview: https://droganaida.github.io/webgl_animated_shaders_demo/
 
 ## Features
 - Pure JavaScript and WebGL implementation.
