@@ -187,6 +187,8 @@
         image.src = 'logo.png';
 
         // Animation loop
+        var animationFrameId;
+
         function animate() {
             var currentTime = performance.now() * 0.001;
 
@@ -220,7 +222,7 @@
             gl.uniform1i(gl.getUniformLocation(programMain, "iChannel1"), 1);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-            requestAnimationFrame(animate);
+            animationFrameId = requestAnimationFrame(animate);
         }
 
         // Helper functions for creating textures, framebuffers, and shaders
@@ -278,6 +280,9 @@
             canvas.height = window.innerHeight * window.devicePixelRatio;
             gl.viewport(0, 0, canvas.width, canvas.height);
 
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
             animate();
         });
 
